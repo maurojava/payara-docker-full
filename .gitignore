@@ -1,0 +1,16 @@
+# Credenziali e password
+.env
+
+# File di log e temporanei
+log.txt
+*.log
+
+# Stati di deploy e cache di Payara
+webapps/.autodeploystatus/
+webapps/.DS_Store
+
+# File di sistema e di IDE (opzionali ma consigliati)
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/ 

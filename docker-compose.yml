@@ -1,0 +1,59 @@
+networks:
+  app-net-full:
+    driver: bridge
+
+services:
+  # 1. Database MariaDB
+  db:
+    image: mariadb:10.11
+    container_name: firstcup-mariadb
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - mariadb_data_full:/var/lib/mysql
+    networks:
+      - app-net-full
+
+  # 2. Server Payara Full con Console di Amministrazione Abilitata
+  payara-app:
+    image: payara/server-full:latest
+    container_name: firstcup-payara
+    restart: unless-stopped
+    ports:
+      - "6680:8080"    # Porta HTTP per l'applicazione
+      - "6648:4848"    # Porta per la Console di Amministrazione Payara
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=db
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - ADMIN_USER=${PAYARA_ADMIN_USER}
+      - PASSWORD=${PAYARA_ADMIN_PASSWORD}
+    volumes:
+      - ./webapps:/opt/payara/deployments
+    depends_on:
+      - db
+    networks:
+      - app-net-full
+
+  # 3. Adminer (Interfaccia web per gestire MariaDB)
+  adminer:
+    image: adminer:latest
+    container_name: firstcup-adminer
+    restart: unless-stopped
+    ports:
+      - "6699:8080"    # Espone Adminer sulla porta 6699 del server/VPS
+    networks:
+      - app-net-full
+
+volumes:
+  mariadb_data_full:
+

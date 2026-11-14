@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE resources PUBLIC "-//GlassFish.org//DTD GlassFish Application Server 3.1 Resource Definitions//EN" "http://glassfish.org/dtds/glassfish-resources_5_0.dtd">
+<resources>
+    <jdbc-resource pool-name="FirstCupPool" 
+    jndi-name="java:app/jdbc/firstcupDS"/>
+    
+    <jdbc-connection-pool name="FirstCupPool"
+                         datasource-classname="org.mariadb.jdbc.MariaDbDataSource"
+                         res-type="javax.sql.DataSource">
+        <property name="URL" value="jdbc:mariadb://${ENV=DB_HOST}:3306/${ENV=DB_NAME}"/>
+        <property name="User" value="${ENV=DB_USER}"/>
+        <property name="Password" value="${ENV=DB_PASSWORD}"/>
+    </jdbc-connection-pool>
+</resources>

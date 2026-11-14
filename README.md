@@ -1,76 +1,126 @@
-# Payara Full & MariaDB Docker Environment
+# Jakarta EE First Cup — Payara 7 & MariaDB (Docker)
 
-Ambiente di sviluppo e deployment containerizzato basato su **Docker Compose**, che integra un server **Payara Full** e un database **MariaDB**, configurato per gestire in modo sicuro le credenziali tramite variabili d'ambiente.
-
----
-
-## 📋 Prerequisiti
-
-* Docker e Docker Compose installati sulla macchina (VPS o locale).
+Ambiente containerizzato per il deployment automatico delle applicazioni **Jakarta EE First Cup** (`firstcup-war.war` e `dukes-age.war`) su **Payara Server 7 Full**, collegato a un database **MariaDB 10.11** e gestibile via web tramite **Adminer**.
 
 ---
 
-## ⚙️ Configurazione delle Variabili d'Ambiente (.env)
+## 🛠️ Architettura e Servizi
 
-Per motivi di sicurezza, le credenziali e i parametri sensibili non sono tracciati da Git (sono esclusi tramite `.gitignore`). 
+Lo stack è orchestrato tramite `docker-compose.yml` su una rete bridge dedicata (`app-net-full`) e comprende tre container:
 
-Prima di avviare i container, devi creare un file denominato **`.env`** nella root del progetto (nella stessa cartella del `docker-compose.yml`).
+| Servizio | Container | Immagine | Porte Mappate (Host:Container) | Descrizione |
+| :--- | :--- | :--- | :--- | :--- |
+| **payara-app** | `firstcup-payara` | `payara/server-full:latest` | `6680:8080` (HTTP)<br>`6648:4848` (Admin) | Application server Jakarta EE con autodeploy automatico da `./webapps`. |
+| **db** | `firstcup-mariadb` | `mariadb:10.11` | `3306` (interna) | Database relazionale con volume persistente `mariadb_data_full`. |
+| **adminer** | `firstcup-adminer` | `adminer:latest` | `6699:8080` | Interfaccia web leggera per l'amministrazione di MariaDB. |
 
-Crea il file `.env` con il seguente contenuto, personalizzando i valori a seconda delle tue esigenze:
+---
+
+## 📁 Struttura della Directory
+
+```text
+payarafull/
+├── docker-compose.yml       # Definizione dei servizi, reti e volumi
+├── .env                     # Variabili d'ambiente (credenziali DB e Payara)
+├── docs/                    # Screenshot per la documentazione
+│   ├── jdbc-datasouce-.jpg
+│   └── valori-datasource.jpg
+├── webapps/                 # Cartella mappata su /opt/payara/deployments
+│   ├── dukes-age.war        # Servizio REST per il calcolo dell'età di Duke
+│   └── firstcup-war.war     # Applicazione web principale (localizzata in IT)
+└── README.md                # Documentazione del progetto
+```
+
+---
+
+## ⚙️ Configurazione (`.env`)
+
+Prima di avviare lo stack, assicurati che nella stessa cartella di `docker-compose.yml` sia presente il file `.env` con le seguenti variabili:
 
 ```env
-# Credenziali MariaDB
-DB_USER=tuo_utente_db
-DB_PASSWORD=tua_password_db
-DB_NAME=tuo_nome_db
-DB_ROOT_PASSWORD=tua_password_root_db
+# Configurazione Database MariaDB
+DB_ROOT_PASSWORD=la_tua_password_root
+DB_NAME=firstcup
+DB_USER=firstcup_user
+DB_PASSWORD=la_tua_password_utente
 
 # Credenziali Amministratore Payara
 PAYARA_ADMIN_USER=admin
-PAYARA_ADMIN_PASSWORD=tua_password_amministratore_payara
+PAYARA_ADMIN_PASSWORD=la_tua_password_payara
 ```
 
-Queste variabili verranno lette automaticamente dal file `docker-compose.yml` e iniettate all'interno dei container di MariaDB e Payara al momento dell'avvio.
+---
+
+## 🗄️ Configurazione DataSource e Variabili d'Ambiente
+
+La connessione tra l'applicazione `firstcup-war` e MariaDB viene configurata automaticamente al momento del deploy tramite il file `glassfish-resources.xml` incluso nel pacchetto WAR:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE resources PUBLIC "-//GlassFish.org//DTD GlassFish Application Server 3.1 Resource Definitions//EN" "http://glassfish.org/dtds/glassfish-resources_5_0.dtd">
+<resources>
+    <jdbc-resource pool-name="FirstCupPool" 
+                   jndi-name="java:app/jdbc/firstcupDS"/>
+    
+    <jdbc-connection-pool name="FirstCupPool"
+                          datasource-classname="org.mariadb.jdbc.MariaDbDataSource"
+                          res-type="javax.sql.DataSource">
+        <property name="URL" value="jdbc:mariadb://${ENV=DB_HOST}:3306/${ENV=DB_NAME}"/>
+        <property name="User" value="${ENV=DB_USER}"/>
+        <property name="Password" value="${ENV=DB_PASSWORD}"/>
+    </jdbc-connection-pool>
+</resources>
+```
+
+### Verifica nella Console di Amministrazione di Payara
+
+Accedendo alla Console di Amministrazione (`https://<IP_VPS>:6648`), sotto la voce **Applications → firstcup-war**, è possibile verificare che Payara abbia registrato correttamente la risorsa JNDI e i parametri del Connection Pool letti dal container Docker:
+
+1. **Risorsa JDBC (`java:app/jdbc/firstcupDS`) collegata al pool `java:app/FirstCupPool`:**
+   ![Configurazione risorsa JDBC su Payara](docs/jdbc-datasouce-.jpg)
+
+2. **Proprietà del Connection Pool con i segnaposto `${ENV=...}` risolti dinamicamente da `docker-compose.yml`:**
+   ![Proprietà Connection Pool con variabili d'ambiente](docs/valori-datasource.jpg)
 
 ---
 
-## 📦 Deploy delle Applicazioni Jakarta EE (Volume `webapps/`)
+## 🚀 Avvio e Gestione
 
-Nel file `docker-compose.yml`, la directory locale **`webapps/`** è montata come volume persistente direttamente nella cartella di autodeploy del container **Payara**.
+### 1. Avvio dello stack (con autodeploy automatico)
+Posiziona i file `.war` compilati nella cartella `./webapps` (assicurandosi che non siano presenti cartelle residue `.autodeploystatus`) e avvia i container:
 
-* **Come pubblicare un'applicazione:** Per mettere online una nuova applicazione web Jakarta EE, è sufficiente copiare o caricare il relativo pacchetto **`.war`** all'interno della cartella `webapps/`.
-* **Deploy automatico:** Payara monitora costantemente questo volume; non appena rileva un nuovo file `.war` (o un aggiornamento di un file esistente), esegue automaticamente il deploy e rende l'applicazione disponibile online senza dover riavviare i container.
-* **Rimozione:** Eliminando il file `.war` dalla cartella `webapps/`, l'applicazione verrà automaticamente rimossa (undeploy) dal server.
+```bash
+docker compose up -d
+```
 
----
+All'avvio, lo script di entrypoint di Payara rileva automaticamente gli archivi presenti in `./webapps` e li aggiunge ai comandi di post-boot senza bisogno di interventi manuali.
 
-## 🚀 Istruzioni per l'Avvio
+### 2. Verifica dei log di deployment
+Per monitorare l'avvio di Payara e confermare l'avvenuto deploy delle applicazioni:
 
-1. **Posizionati nella cartella del progetto:**
-   ```bash
-   cd payarafull
-   ```
+```bash
+docker compose logs -f payara-app
+```
 
-2. **Assicurati di aver creato il file `.env`** (come descritto sopra).
+### 3. Arresto e pulizia completa
+Per fermare i container (aggiungere `-v` solo se si desidera cancellare anche i volumi del database):
 
-3. **Inserisci i tuoi file `.war`** nella directory `webapps/` (se non già presenti).
-
-4. **Avvia i container in background:**
-   ```bash
-   docker compose up -d
-   ```
-
-5. **Verifica lo stato o i log:**
-   ```bash
-   docker compose ps
-   docker compose logs -f
-   ```
-
----
-
-## 🛑 Arresto dei Container
-
-Per fermare i servizi mantenendo i dati del database persistenti:
 ```bash
 docker compose down
 ```
+
+---
+
+## 🌐 Accesso ai Servizi
+
+Sostituisci `<IP_VPS>` con l'indirizzo IP pubblico del server o con il dominio associato:
+
+* **Applicazione First Cup:** `http://<IP_VPS>:6680/firstcup-war`
+* **Servizio Duke's Age:** `http://<IP_VPS>:6680/dukes-age`
+* **Console di Amministrazione Payara:** `https://<IP_VPS>:6648` *(accedere con `<PAYARA_ADMIN_USER>` e `<PAYARA_ADMIN_PASSWORD>`)*
+* **Adminer (Gestione DB):** `http://<IP_VPS>:6699`
+  * **Sistema:** `MySQL`
+  * **Server:** `db`
+  * **Utente:** `<DB_USER>`
+  * **Password:** `<DB_PASSWORD>`
+  * **Database:** `<DB_NAME>`
